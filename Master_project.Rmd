@@ -1,0 +1,284 @@
+---
+title: "Association of Stress and connectivity in UK lakes with beetles species richness"
+author: "Kuan Wang"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loadpackages, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE}
+library(readr)
+library(tidyverse)
+library(moderndive)
+library(gapminder)
+library(sjPlot)
+library(stats)
+library(jtools)
+library(dplyr)
+library(skimr)
+library(kableExtra)
+library(gridExtra)
+library(ggplot2)
+library(ISLR)
+library(plotly)
+library(MASS)
+library(broom)
+library(mgcv)
+library(gratia)
+library(tinytex)
+library(tab)
+library(MASS)
+library(corrplot)
+library(RColorBrewer)
+library(car)
+```
+
+# Introduction
+
+## Background of the program
+In the intricate UK's freshwater ecosystems, connectivity and stressors play pivotal roles that greatly influence biodiversity and ecosystem functionality. Therefore the "Hydroscape" project funded by the UK Natural Environment Research Council (NERC). This project delves deep into the exploration of the interactions between stressors and connectivity and how they affect biodiversity and ecosystem functionality in the UK's freshwater systems. With a spotlight on some specific species such as beetles, the project aims to demystify the mutual effects of stress and connectivity on the species diversity.
+
+There are many differnent approach in the early 
+
+# Methodology
+Now we introduce the Gerneralised additive model, it is the non linear approach on all variables, using smooth functions feature variables. From the scatter plots above, we can find the poisson pattern from the response variable y, therefore the non-linear model is formed as: 
+$$ y \sim Poi(\lambda) $$ 
+$$ E(y) = \lambda $$
+$$ g(\lambda) = b_0 + f(x_1) + f(x_2)+ ... +f(x_p)$$
+Where y is the response variable: Species richness, $\lambda$ is Expected value of y, and $f(x_i)$ corresponds to the smooth functions for each explanatory variable to form non-linear relationship against y.
+
+# Data analysis
+
+## Introduction of the data
+
+## Boxplots
+```{r boxplot, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Boxplots of raw data} Boxplots of raw data"}
+# Read the data from the CSV file (adjust the file path if needed)
+beetles<- read_csv("beetles_project_data.csv")
+colnames(beetles)<- c("GridRef1km","nSpecies","WBID","Lake.area","Lake.alltitude","Lake.depth","Lake.volume","Lake.perimeter","Lake.WFD","Land.slope","Land.lakearea","Land.pondarea","Land.riverlength","Land.Canallength","Land.obstacles","Land.lakeper","Land.pondper","Land.lakecount","Land.pondcount","Land.Agricultural","Land.urban","land.MeanT","Lan.Rainfall","Land.fishing","Land.watersports","Land.allvisit")
+beetles$species.richness<- beetles$nSpecies/beetles$Lake.area
+par(mfrow = c(2,9))
+par(mar=c(1, 1, 1, 1))
+beetles.new<- beetles[,c(10:26)]
+# Boxplots for each variables
+for (i in c(1:17)) {
+  boxplot(beetles.new[,i],xlab = colnames(beetles.new[,i]),ylim = c(min(beetles.new[,i]),max(beetles.new[,i])))
+} 
+
+
+```
+
+``` {r new boxplot, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Boxplots of filtered data} Boxplots of filtered data"}
+  IQRFilter = function(x){          
+    myQuart =quantile(x,na.rm=T)            
+    IQR =  myQuart[4] - myQuart[2]          # Find the extreme IQR for each data value
+    outliers_top = myQuart[4] + 3 * IQR    
+    outliers_bottom = myQuart[2] - 3 * IQR  # Find the edge of IQR
+    x[x>outliers_top] = outliers_top        
+    x[x<outliers_bottom] = outliers_bottom  # Define extreme outliers to be the MAX/MIN edge
+    return(x)
+  }
+  
+beetles<- beetles%>%
+  mutate(across(where(is.numeric),IQRFilter)) # Filter the data 
+
+# Boxplots for each variables
+par(mfrow = c(2,9))
+par(mar=c(1, 1, 1, 1))
+beetles.new<- beetles[,c(10:26)]
+for (i in c(1:17)) {
+  boxplot(beetles.new[,i],xlab = colnames(beetles.new[,i]),ylim = c(min(beetles.new[,i]),max(beetles.new[,i])))
+}
+```
+The correlations between each exchange variables versus the response variable is plotted as Figure 1. Most of the connectivity variables have weak negative correlations against richness, the stress variables are appeared to be more active and correlated. "landscape_2km_LCM2007...Agricultural.." and "landscape_2km_Mean.Temperature..2000.2016..C." shows the most positive correlation and "landscape_2km_Mean.slope..degrees." shows the most negative correlation, which is definitely unexpected. Overall, all variables do not show clear relationship against the response variable, we need further plots to discover.
+
+```{r data summary, echo=FALSE,warning=FALSE, message=FALSE,out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Correlations of different variables} Correlations of different variables"}
+
+# Define the columns of interest
+species_richness <- beetles$species.richness
+stress_variables <- beetles[, c(20:26)]
+connectivity_variables<- beetles[, c(10:13,15:19)]
+
+
+# Calculate the correlations between species richness and stress variables
+corr<- cor(species_richness,beetles[,c(10:13,15:26)])
+boxplot(corr,xlab="Connectivity and stress variables", ylab="Correlation")
+```
+## Correlation plots
+```{r data summary, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Correlations of different variables} Correlations of different variables"}
+
+par(mfrow = c(1,2))
+
+corrplot(cor(stress_variables), type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+corrplot(cor(connectivity_variables), type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+## Scatter plots
+
+Figure 2 are scatter plots from all stress variables against species richness. It is clear that there is no strong linear pattern for all these variables, Agriculture and Mean temperature are left skewed and Urban, Rainfall, Visits are right skewed, the rest are ramdomly placed.
+
+```{r stress scatter plots, echo=FALSE,out.width = '100%', fig.align = "center", fig.pos = "H",fig.cap="\\label{fig:stress scatter plots} Scatter plots of different stress variables against nSpecies"}
+
+# Create scatter plots for each stress variable
+plots_stress<- list()
+  plots_stress[[1]]<-  ggplot(data=beetles, aes(x = beetles[[20]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[20], y = "Species")
+  plots_stress[[2]]<-  ggplot(data=beetles, aes(x = beetles[[21]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[21], y = "Species")
+    plots_stress[[3]]<-  ggplot(data=beetles, aes(x = beetles[[22]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[22], y = "Species")
+    plots_stress[[4]]<-  ggplot(data=beetles, aes(x = beetles[[23]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[23], y = "Species")  
+    plots_stress[[5]]<-  ggplot(data=beetles, aes(x = beetles[[24]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[24], y = "Species")  
+    plots_stress[[6]]<-  ggplot(data=beetles, aes(x = beetles[[25]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[25], y = "Species")
+    plots_stress[[7]]<-  ggplot(data=beetles, aes(x = beetles[[26]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[26], y = "Species")
+    grid.arrange(grobs = plots_stress, ncol = 2)
+```
+
+Figure 3 shows scatter plots from all connectivity variables against species richness. Most of the variables are very right skewed, and there is no clear linear relationship from these variables can be reached.
+
+```{r connectivity scatter plots, echo=FALSE,out.width = '100%', fig.align = "center", fig.pos = "H",fig.cap="\\label{fig:connectivity scatter plots} Scatter plots of different connectivity variables against nSpecies"}
+# Create scatter plots for each connectivity variable
+plots_connectivity<- list()
+  plots_connectivity[[1]]<-  ggplot(data=beetles, aes(x = beetles[[10]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[10], y = "Species")
+    plots_connectivity[[2]]<-  ggplot(data=beetles, aes(x = beetles[[11]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[11], y = "Species")
+    plots_connectivity[[3]]<-  ggplot(data=beetles, aes(x = beetles[[12]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[12], y = "Species")
+    plots_connectivity[[4]]<-  ggplot(data=beetles, aes(x = beetles[[13]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[13], y = "Species")
+    plots_connectivity[[6]]<-  ggplot(data=beetles, aes(x = beetles[[15]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[15], y = "Species")
+    plots_connectivity[[7]]<-  ggplot(data=beetles, aes(x = beetles[[16]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[16], y = "Species")
+      plots_connectivity[[8]]<-  ggplot(data=beetles, aes(x = beetles[[17]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[17], y = "Species")
+      plots_connectivity[[9]]<-  ggplot(data=beetles, aes(x = beetles[[18]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[18], y = "Species")
+      plots_connectivity[[10]]<-  ggplot(data=beetles, aes(x = beetles[[19]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[19], y = "Species")
+  grid.arrange(grobs = plots_connectivity, ncol = 2)
+  
+
+```
+
+## Fit the generalised linear model
+
+Here is the ANOVA table after the stepwise GLM model is fitted in to stress variables. The results shows that almost all variables should be included into the linear model and all p-values are obvious, which is not appropriate. We need another non-linear model to fit the data.
+
+```{r stress glm, echo=FALSE,out.width = '80%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress glm result} Summary of the stepwise glm model on stress variables"}
+# Fit the generalized linear model
+s_formula<- paste('log(species.richness)','~' ,paste(colnames(stress_variables), collapse = "+"))
+glm_stress <- glm(formula = s_formula, 
+                 data = beetles, 
+                 family = gaussian())
+glm_stress_up<- update(glm_stress,  . ~ . -Land.Agricultural,data = beetles, family = gaussian())
+
+#calculate the VIF for each predictor variable in the model
+vif(glm_stress)
+
+#create horizontal bar chart to display each VIF value
+barplot(vif(glm_stress), main = "VIF Values", horiz = TRUE, col = "steelblue")
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+
+# Summary and residual plot of this model
+summary(glm_stress)
+plot(glm_stress)
+
+# Perform the stepwise selection process
+stepwise_stress <- step(glm_stress, direction = "both")
+
+# Print the summary of the stepwise model
+summary(stepwise_stress)
+
+par(mfrow=c(2,2))
+plot(stepwise_stress)
+
+```
+
+```{r connectivity glm, echo=FALSE,out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:connectivity glm result} Summary of the stepwise glm model on connectivity variables"}
+# Fit the generalized linear model
+c_formula<- paste('log(species.richness)','~',paste(colnames(connectivity_variables), collapse = "+"))
+glm_connectivity<- glm(formula = c_formula, 
+                 data = beetles, 
+                 family = gaussian())
+
+# Perform the stepwise selection process
+stepwise_connectivity <- step(glm_connectivity, direction = "both")
+summary(stepwise_connectivity)
+
+# Print the summary of the stepwise model
+par(mfrow=c(2,2))
+plot(stepwise_connectivity)
+
+```
+
+## Visualise using generalised additive model
+
+
+
+```{r stress gam, echo=FALSE, out.width = '80%', fig.align = "center", fig.pos = "H", fig.cap="\\label{fig:stress gam result} Summary of the stepwise glm model on stress variables"}
+# Fit the GAM model
+gam_stress <- mgcv::gam(log(species.richness)~ s(Land.Agricultural) +
+                    s(Land.urban) + 
+                    s(land.MeanT)+
+                   s(Lan.Rainfall) +
+                    s(Land.fishing)+ 
+                   s(Land.watersports) +
+                    s(Land.allvisit), 
+                  data = beetles,family = gaussian())
+
+# Summary of the GAM model
+summary(gam_stress)
+gam.check(gam_stress)
+
+gam_stress_up = update(gam_stress, . ~ .  -s(Land.urban)  )
+
+summary(gam_stress_up)
+# Visualize through the component plots
+gratia::draw(gam_stress)
+```
+
+```{r connectivity GAM, echo=FALSE}
+# Fit the GAM model
+gam_connectivity <- mgcv::gam(nSpecies~ s(landscape_2km_Mean.slope..degrees.) + s(landscape_2km_Lake.area..)+
+                   s(landscape_2km_Pond.area..) + s(landscape_2km_Rivers...length..m._per_ha)+ 
+                  s(landscape_2km_Obstacles...Count_per_ha)+s(landscape_2km_Lakes...Perimeter..m._per_ha)+
+                    s(landscape_2km_Ponds...Perimeter..m._per_ha)+
+                    s(landscape_2km_Lakes...Count_per_ha)+s(landscape_2km_Ponds...Count_per_ha), data = beetles, select = TRUE)
+
+# Summary of the GAM model
+summary(gam_connectivity)
+
+# Visualize through the component plots
+gratia::draw(gam_connectivity)
+
+anova(glm_connectivity, gam_connectivity, test = "Chisq")
+
+```
