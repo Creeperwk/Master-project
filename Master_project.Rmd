@@ -2,8 +2,10 @@
 title: "Association of Stress and connectivity in UK lakes with beetles species richness"
 author: "Kuan Wang"
 output:
-  pdf_document: default
+  pdf_document: 
+        latex_engine: xelatex
   html_document: default
+bibliography: report1.bib
 ---
 
 ```{r setup, include=FALSE}
@@ -11,6 +13,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r loadpackages, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE}
+library(glmmTMB)
+library(countreg)
+library(boot)
+library(devtools)
+library(webshot)
+library(dplyr)
+library(leaflet)
+library(rnrfa)
 library(readr)
 library(tidyverse)
 library(moderndive)
@@ -31,254 +41,536 @@ library(mgcv)
 library(gratia)
 library(tinytex)
 library(tab)
-library(MASS)
 library(corrplot)
 library(RColorBrewer)
 library(car)
+library(GGally)
+library(bookdown)
 ```
 
-# Introduction
+# 1 Introduction
 
-## Background of the program
-In the intricate UK's freshwater ecosystems, connectivity and stressors play pivotal roles that greatly influence biodiversity and ecosystem functionality. Therefore the "Hydroscape" project funded by the UK Natural Environment Research Council (NERC). This project delves deep into the exploration of the interactions between stressors and connectivity and how they affect biodiversity and ecosystem functionality in the UK's freshwater systems. With a spotlight on some specific species such as beetles, the project aims to demystify the mutual effects of stress and connectivity on the species diversity.
+Global biodiversity is facing greater challenge nowadays due to the acceleration of climate change and human industrial revolution[@stuarthmbutchart_2010_global]. According to [@wiens_2016_climaterelated; @abell_2008_freshwater], Although biodiversity of freshwater is declining at higher rates compared with terrestrial and marine, its ecosystem is somewhat overlooked by the conservation community. Due to the limited human resources, identifying crucial areas for conservation is becoming problematic in reaching efficient biodiversity preservation.[@margules_2000_systematic; @myers_2000_biodiversity] In the intricate UK's freshwater ecosystems, connectivity and stressors play pivotal roles that greatly influence biodiversity and ecosystem functionality.  
 
-There are many differnent approach in the early 
+For most of the inland aquatic habitats, water beetles' richness is the perfect indicator for checking the biodiversity and conservation of freshwater. The existance of some specific species are also critical in determine water quality and habitat stability.[@bilton_2019_water] In the Mediterranean region, water beetles exists in nearly all types of freshwater and brackish environments because of its high species richness.[@ribera_2000_biogeography] At the same time, water beetles have been employed to identify priority conservation zones.[@dsnchezfernndez_2004_selecting]  
 
-# Methodology
-Now we introduce the Gerneralised additive model, it is the non linear approach on all variables, using smooth functions feature variables. From the scatter plots above, we can find the poisson pattern from the response variable y, therefore the non-linear model is formed as: 
-$$ y \sim Poi(\lambda) $$ 
-$$ E(y) = \lambda $$
-$$ g(\lambda) = b_0 + f(x_1) + f(x_2)+ ... +f(x_p)$$
-Where y is the response variable: Species richness, $\lambda$ is Expected value of y, and $f(x_i)$ corresponds to the smooth functions for each explanatory variable to form non-linear relationship against y.
+Therefore the "Hydroscape" project funded by the UK Natural Environment Research Council (NERC). This project delves deep into the exploration of the interactions between stressors and connectivity and how they affect biodiversity and ecosystem functionality in the UK's freshwater systems. With a spotlight on some specific species such as beetles, the project aims to demystify the mutual effects of stress and connectivity on the species diversity. 
 
-# Data analysis
+Finally, this project would like to extend heartfelt gratitude to Dr. Alan Law and Dr. Philip Taylor for providing precious data on response and explanatory variables, which form the establishment of this program.  
 
-## Introduction of the data
+  The objective of this program is to answer the following questions:  
+(i) What are the main relationships between species richness and surrounding land cover stressors?  
+(ii) What is the primary correlation between species diversity in freshwaters and connectivity to its buffers?  
+(iii) Does the association between species distribution and stress factors change depending on connectivity to other nearby freshwaters?  
 
-## Boxplots
-```{r boxplot, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Boxplots of raw data} Boxplots of raw data"}
+# 2 Methodology
+
+## 2.1 Study area and dataset
+
+This study is based on Great Britain islands(Some offshore islands not included: Isle of Man, Shetlands etc.), an island in the North Atlantic Ocean with an area of 209,331 $km^2$ and contains over 40,000 water bodies in total.[(Source,2012)](https://web.archive.org/web/20171026214802/http://islands.unep.ch/ICJ.htm#943)[@hughes_2004_the] From the illustrated map below, it is clear that most of the lake samples come from the middle part of the island, which are northern and central England.
+
+```{r leaflet, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Map of the study area(Great Britain island) with all lake samples marked in blue.} Map of the study area(Great Britain island) with all lake samples marked in blue."}
 # Read the data from the CSV file (adjust the file path if needed)
 beetles<- read_csv("beetles_project_data.csv")
-colnames(beetles)<- c("GridRef1km","nSpecies","WBID","Lake.area","Lake.alltitude","Lake.depth","Lake.volume","Lake.perimeter","Lake.WFD","Land.slope","Land.lakearea","Land.pondarea","Land.riverlength","Land.Canallength","Land.obstacles","Land.lakeper","Land.pondper","Land.lakecount","Land.pondcount","Land.Agricultural","Land.urban","land.MeanT","Lan.Rainfall","Land.fishing","Land.watersports","Land.allvisit")
-beetles$species.richness<- beetles$nSpecies/beetles$Lake.area
-par(mfrow = c(2,9))
-par(mar=c(1, 1, 1, 1))
-beetles.new<- beetles[,c(10:26)]
-# Boxplots for each variables
-for (i in c(1:17)) {
-  boxplot(beetles.new[,i],xlab = colnames(beetles.new[,i]),ylim = c(min(beetles.new[,i]),max(beetles.new[,i])))
-} 
+colnames(beetles)<- c("GridRef1km","nSpecies","WBID","Lake.area","Lake.alltitude","Lake.depth","Lake.volume","Lake.perimeter","Lake.WFD","Land.slope","Land.lakearea","Land.pondarea","Land.riverlength","Land.Canallength","Land.obstacles","Land.lakeper","Land.pondper","Land.lakecount","Land.pondcount","Land.Agricultural","Land.urban","Land.MeanT","Land.Rainfall","Land.fishing","Land.watersports","Land.allvisit")
 
+# Define the columns of interest
+species_richness <- beetles$nSpecies
+stress_variables <- beetles[, c(20:26)]
+connectivity_variables<- beetles[, c(10:19)]
 
+# Generate coordinates from the dataset
+coords <- osg_parse(beetles$GridRef1km, coord_system = "WGS84" )
+# Plot the illustrated map for the dataset
+circles <- data.frame(lng = coords$lon,
+                      lat = coords$lat)
+
+leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(data = circles, radius = 1, color = "blue",stroke = FALSE, fillOpacity = 1)
 ```
 
-``` {r new boxplot, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Boxplots of filtered data} Boxplots of filtered data"}
-  IQRFilter = function(x){          
-    myQuart =quantile(x,na.rm=T)            
-    IQR =  myQuart[4] - myQuart[2]          # Find the extreme IQR for each data value
-    outliers_top = myQuart[4] + 3 * IQR    
-    outliers_bottom = myQuart[2] - 3 * IQR  # Find the edge of IQR
-    x[x>outliers_top] = outliers_top        
-    x[x<outliers_bottom] = outliers_bottom  # Define extreme outliers to be the MAX/MIN edge
-    return(x)
-  }
-  
-beetles<- beetles%>%
-  mutate(across(where(is.numeric),IQRFilter)) # Filter the data 
+The secondary dataset we used in this project is base on the compilation from Dr. Alan Law and Dr. Philip Taylor from the project NERC. The collected dataset comprises 1418 samples from various lakes throughout the UK and each of them have 26 different variables. They are categorized they belongs to three facet concerning the lakes: Lake typology, Connectivity and Stressors. The following table shows the data summary of response variable and numerical variables for lake geology features :  
 
+```{r data intro, echo=FALSE,warning=FALSE, message=FALSE,out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Introduction of the dataset--Lake variables} Introduction of the dataset--Lake typology variables"}
+beetles<- as_tibble(beetles)
+# Summary of variables
+skim.lake<- beetles %>%
+  dplyr::select(nSpecies,Lake.area,Lake.alltitude,Lake.depth,Lake.volume,Lake.perimeter)%>%
+  skim()
+lake.table<- cbind(skim.lake$skim_variable,skim.lake$n_missing,round(skim.lake$numeric.mean,digit = 2),round(skim.lake$numeric.sd,digit = 2),round(skim.lake$numeric.p50,digit =2))
+lake.table%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Variable","Missing number","Mean","S.D","Median"))%>%
+    kable_styling(latex_options = "HOLD_position", position = "center")
+```
+Connectivity and stressor variables are the major components of this regression analysis. In this dataset, connectivity variables are structural connectivity which refers to the arrangement of elements within landscapes, including the spatial layout of landscape units and the physical features of the surrounding buffer areas.(@zhang_2021_the) Another part of the explanatory variable refers to nature and human interactions to lake surroundings, which refers to stressors. The table below shows the explanation of all variables.  
+
+```{r connectivity table, echo=FALSE,warning=FALSE, message=FALSE,out.width = '50%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Explanation of connectivity variables} Explanation of connectivity variables"}
+
+# Build up a table for variable illustration
+connectivity_table<- cbind(colnames(connectivity_variables),c("Mean slope of 2km buffer around lake/ degree","Percentage of 2km buffer around lake covered by lakes/ %","Percentage of 2km buffer around lake covered by ponds/ %","Total length of rivers in 2km buffer around lake/ km","Total length of canals in 2km buffer around lake/ km","Total number of obstacles in 2km buffer around lake","Total perimeter of all other lakes in 2km buffer around lake/ km","Total perimeter of all ponds in 2km buffer around lake/ km","Total number of other lakes in 2km buffer around lake","Total number of ponds in 2km buffer around lake"))
+connectivity_table<- as_tibble(connectivity_table)
+connectivity_table%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Connectivity Variables","Explanation"))%>%
+  kable_styling(latex_options = "HOLD_position", position = "center")
+```
+
+```{r stressor table, echo=FALSE,warning=FALSE, message=FALSE,out.width = '50%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Explanation of stressor variables} Explanation of stressor variables"}
+# Build up a table for variable illustration
+stress_table<- cbind(colnames(stress_variables),c("Percentage of agricultural land cover in 2km buffer around lake","Percentage of urban land cover in 2km buffer around lake","Mean temperature of 2km buffer around lake ","Mean annual rainfall of 2km buffer around lake","Normalised measure of number of visits for fish- ing purposes in 2km buffer around lake","Normalised measure of number of visits for watersport purposes in 2km buffer around lake","Normalised measure of number of visits for all pur- poses in 2km buffer around lake"))
+stress_table<- as_tibble(stress_table)
+stress_table%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Stressor Variables","Explanation"))%>%
+  kable_styling(latex_options = "HOLD_position", position = "center")
+```
+
+Figure 2. shows the boxplot of all the stressor and connectivity variables. It is clear that majority of the sample data in some connectivity variables are around value zero(Land.lakearea, Land.Canallength), and the actual realiable datapoints are made by outliers. Therefore, Land.Canallength should not be included in the model since it only has 166 non-zero values.  
+
+```{r boxplot2, echo=FALSE,warning=FALSE, message=FALSE,out.width = '70%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Boxplots of stress and connectivity variables} Boxplots of stress and connectivity variables"}
 # Boxplots for each variables
-par(mfrow = c(2,9))
 par(mar=c(1, 1, 1, 1))
+par(mfrow = c(2,9))
+
 beetles.new<- beetles[,c(10:26)]
 for (i in c(1:17)) {
   boxplot(beetles.new[,i],xlab = colnames(beetles.new[,i]),ylim = c(min(beetles.new[,i]),max(beetles.new[,i])))
 }
+# Delete the empty variable
+connectivity_variables<- connectivity_variables%>%
+  dplyr::select(-Land.Canallength)
 ```
-The correlations between each exchange variables versus the response variable is plotted as Figure 1. Most of the connectivity variables have weak negative correlations against richness, the stress variables are appeared to be more active and correlated. "landscape_2km_LCM2007...Agricultural.." and "landscape_2km_Mean.Temperature..2000.2016..C." shows the most positive correlation and "landscape_2km_Mean.slope..degrees." shows the most negative correlation, which is definitely unexpected. Overall, all variables do not show clear relationship against the response variable, we need further plots to discover.
 
-```{r data summary, echo=FALSE,warning=FALSE, message=FALSE,out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Correlations of different variables} Correlations of different variables"}
+## 2.2 Models implemented
 
-# Define the columns of interest
-species_richness <- beetles$species.richness
-stress_variables <- beetles[, c(20:26)]
-connectivity_variables<- beetles[, c(10:13,15:19)]
+Given that this is a regression problem, a Generalized Linear Model(GLM) will typically be the first choice for incorporating all the variables. The response variable in this case is a count variable, which is the number of species in a certain sample. Poisson/Quasi-poisson/Negative binomial GLM should be considered based on different level of dispersion. Here is the negative binomial model used in this case:  
+
+$$Y \sim NB(\mu,k), Y_i \sim NB(\mu_i,k)$$ 
+
+$$E(Y_i) = \mu_i, Var(Y_i) = \mu_i + \mu_i^2/k$$ 
+
+Where the response variable $Y$ have mean $\mu$ and variance $\mu + \mu^2/k$is related to both poisson parameter $\mu$ and dispersion variable $k$. $\mu^2/k$ converges to zero if k is large enough, then the whole distribution converges to poisson distribution.
+
+
+$$g(\mu_i) = log(\mu_i)$$
+
+$$g(\mu) = \beta_0 + \beta_1x_1 + \beta_2x_2+ ... +\beta_px_p$$
+
+The link function $g(\mu)$ is also logarithmic with $\beta_i$ represents the coefficients for different variables and $x_i$ corresponds to different connectivity/stressor variables.  
+
+
+## 2.3 Model checking
+
+The Akaike Information Criterion (AIC), is a metric for evaluating the goodness of fit when selecting the most appropriate model from among multiple fitted options. The AIC is calculated as follows:  
+
+$$AIC = -2log(MLE)+2k$$
+
+Where k indicates the estimated parameters in the model, and MLE stands for Maximum likelihood estimate of this model. Given a multiple choice of models, the model with the lowest AIC value is considered the most preferred choice with its maximized MLE and lowest possible parameters.  
+
+Overdispersion is checked via the dispersion parameter $\phi$, where:  
+
+$$\phi = D/(n-p)$$
+$D$ refers to the residual deviance and $n-p$ is the degrees of freedom. a relative high value with $\phi>10$ indicates a serious overdispersion of this model.  
+
+
+# 3 Data analysis
+
+## 3.1 Correlation between explanatory variables and response variable
+The correlations between each explanatory variable versus the response variable is plotted as Figure 3. Most of the connectivity variables have weak negative correlations against richness, the stress variables are appeared to be more active and correlated. "Land.Agricultural" and "Land.MeanT " shows the most positive correlation and "landscape_2km_Mean.slope..degrees." shows the most negative correlation, which is definitely unexpected. Overall, all variables do not show clear relationship against the response variable, we need further plots to discover.  
+
+```{r correlation, echo=FALSE,warning=FALSE, message=FALSE,out.width = '50%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Correlations between response variable and different covariates} Correlations between response variable and different covariates"}
 
 
 # Calculate the correlations between species richness and stress variables
 corr<- cor(species_richness,beetles[,c(10:13,15:26)])
 boxplot(corr,xlab="Connectivity and stress variables", ylab="Correlation")
+
 ```
-## Correlation plots
-```{r data summary, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Correlations of different variables} Correlations of different variables"}
 
-par(mfrow = c(1,2))
+## 3.2 Correlation plots
 
-corrplot(cor(stress_variables), type="upper", order="hclust",
-         col=brewer.pal(n=8, name="RdYlBu"))
-corrplot(cor(connectivity_variables), type="upper", order="hclust",
-         col=brewer.pal(n=8, name="RdYlBu"))
+Figure 4 are the correlation plots for each explanatory variable, correlations between each variables have shown some similarities, such as Land.watersports/Land.allvisit and Land.pondper/Land.poundcount. For these variables which might have muticolinearity, some of them need to be deleted to improve the model's performance.  
+
+```{r correlation plots, echo=FALSE,warning=FALSE, message=FALSE,out.width = '90%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:Correlations of different variables} Correlations of different variables"}
+
+par(mfrow = c(1,1))
+# Correlation plots for different variables
+
+corrplot(cor(beetles[10:26]), method = "color", type="upper",tl.cex = 0.5,number.cex = 0.5, addCoef.col = "black", tl.col="black", tl.srt=45, diag=FALSE )
+
 ```
-## Scatter plots
 
-Figure 2 are scatter plots from all stress variables against species richness. It is clear that there is no strong linear pattern for all these variables, Agriculture and Mean temperature are left skewed and Urban, Rainfall, Visits are right skewed, the rest are ramdomly placed.
+\newpage
 
-```{r stress scatter plots, echo=FALSE,out.width = '100%', fig.align = "center", fig.pos = "H",fig.cap="\\label{fig:stress scatter plots} Scatter plots of different stress variables against nSpecies"}
+## 3.3 Scatter plots
+
+Figure 5 are scatter plots from all stress variables against species richness. It is clear that there is no strong linear pattern for all these variables, Agriculture and Mean temperature are left skewed and Urban, Rainfall, Visits are right skewed, the rest are ramdomly placed.  
+
+```{r stress scatter plots, echo=FALSE,out.width = '100%', warning=FALSE, message=FALSE, fig.align = "center", fig.pos = "H",fig.cap="\\label{fig:stress scatter plots} Scatter plots of different stress variables against nSpecies"}
 
 # Create scatter plots for each stress variable
 plots_stress<- list()
   plots_stress[[1]]<-  ggplot(data=beetles, aes(x = beetles[[20]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[20], y = "Species")
+        labs(x = colnames(beetles)[20], y = "Species")+ 
+        geom_smooth()
   plots_stress[[2]]<-  ggplot(data=beetles, aes(x = beetles[[21]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[21], y = "Species")
+        labs(x = colnames(beetles)[21], y = "Species")+ 
+        geom_smooth()
     plots_stress[[3]]<-  ggplot(data=beetles, aes(x = beetles[[22]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[22], y = "Species")
+        labs(x = colnames(beetles)[22], y = "Species")+ 
+        geom_smooth()
     plots_stress[[4]]<-  ggplot(data=beetles, aes(x = beetles[[23]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[23], y = "Species")  
+        labs(x = colnames(beetles)[23], y = "Species")  + 
+        geom_smooth()
     plots_stress[[5]]<-  ggplot(data=beetles, aes(x = beetles[[24]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[24], y = "Species")  
+        labs(x = colnames(beetles)[24], y = "Species")+ 
+        geom_smooth()  
     plots_stress[[6]]<-  ggplot(data=beetles, aes(x = beetles[[25]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[25], y = "Species")
+        labs(x = colnames(beetles)[25], y = "Species")+ 
+        geom_smooth()
     plots_stress[[7]]<-  ggplot(data=beetles, aes(x = beetles[[26]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[26], y = "Species")
+        labs(x = colnames(beetles)[26], y = "Species")+ 
+        geom_smooth()
     grid.arrange(grobs = plots_stress, ncol = 2)
 ```
 
-Figure 3 shows scatter plots from all connectivity variables against species richness. Most of the variables are very right skewed, and there is no clear linear relationship from these variables can be reached.
+\newpage 
 
-```{r connectivity scatter plots, echo=FALSE,out.width = '100%', fig.align = "center", fig.pos = "H",fig.cap="\\label{fig:connectivity scatter plots} Scatter plots of different connectivity variables against nSpecies"}
+Figure 6 shows scatter plots from all connectivity variables against species richness. Most of the variables are very right skewed, and there is no clear linear relationship from these variables can be reached.  
+
+```{r connectivity scatter plots, echo=FALSE,warning=FALSE, message=FALSE,out.width = '100%', fig.align = "center", fig.pos = "H",fig.cap="\\label{fig:connectivity scatter plots} Scatter plots of different connectivity variables against nSpecies"}
 # Create scatter plots for each connectivity variable
 plots_connectivity<- list()
   plots_connectivity[[1]]<-  ggplot(data=beetles, aes(x = beetles[[10]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[10], y = "Species")
+        labs(x = colnames(beetles)[10], y = "Species")+ 
+        geom_smooth()
     plots_connectivity[[2]]<-  ggplot(data=beetles, aes(x = beetles[[11]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[11], y = "Species")
+        labs(x = colnames(beetles)[11], y = "Species")+ 
+        geom_smooth()
     plots_connectivity[[3]]<-  ggplot(data=beetles, aes(x = beetles[[12]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[12], y = "Species")
+        labs(x = colnames(beetles)[12], y = "Species")+ 
+        geom_smooth()
     plots_connectivity[[4]]<-  ggplot(data=beetles, aes(x = beetles[[13]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[13], y = "Species")
+        labs(x = colnames(beetles)[13], y = "Species")+ 
+        geom_smooth()
+     plots_connectivity[[5]]<-  ggplot(data=beetles, aes(x = beetles[[14]], y = species_richness)) +
+        geom_point() +
+        labs(x = colnames(beetles)[14], y = "Species")+ 
+        geom_smooth()
     plots_connectivity[[6]]<-  ggplot(data=beetles, aes(x = beetles[[15]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[15], y = "Species")
+        labs(x = colnames(beetles)[15], y = "Species")+ 
+        geom_smooth()
     plots_connectivity[[7]]<-  ggplot(data=beetles, aes(x = beetles[[16]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[16], y = "Species")
+        labs(x = colnames(beetles)[16], y = "Species")+ 
+        geom_smooth()
       plots_connectivity[[8]]<-  ggplot(data=beetles, aes(x = beetles[[17]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[17], y = "Species")
+        labs(x = colnames(beetles)[17], y = "Species")+ 
+        geom_smooth()
       plots_connectivity[[9]]<-  ggplot(data=beetles, aes(x = beetles[[18]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[18], y = "Species")
+        labs(x = colnames(beetles)[18], y = "Species")+ 
+        geom_smooth()
       plots_connectivity[[10]]<-  ggplot(data=beetles, aes(x = beetles[[19]], y = species_richness)) +
         geom_point() +
-        labs(x = colnames(beetles)[19], y = "Species")
+        labs(x = colnames(beetles)[19], y = "Species")+ 
+        geom_smooth()
   grid.arrange(grobs = plots_connectivity, ncol = 2)
   
+# Delete similar variables for future analysis
+stress_variables<- stress_variables%>%
+  dplyr::select(-Land.allvisit)
+connectivity_variables<- connectivity_variables%>%
+  dplyr::select(-one_of("Land.pondcount","Land.lakecount"))
 
 ```
 
-## Fit the generalised linear model
+## 3.4 Fit the generalised linear model
 
-Here is the ANOVA table after the stepwise GLM model is fitted in to stress variables. The results shows that almost all variables should be included into the linear model and all p-values are obvious, which is not appropriate. We need another non-linear model to fit the data.
+From the scatterplots and corrplots above, there are some variables shows high colinearity with other variables(Land.allvisit,Land.pondcount,Land.lakecount), though they should be excluded to the model building. In order to discover what specific variable interfere the species richness, the GLM model for count variables is fitted in to stressor variables. Firstly, the data was fitted with poisson GLM model, the result shows a severe overdispersion with residual deviance: 16142 on 1411 degrees of freedom with the dispersion ratio = 11.63. Therefore, a negative binomial model is implemented to solve this problem. There are several updates to optimize the model by deleting colinear items and adding interaction terms.   
 
-```{r stress glm, echo=FALSE,out.width = '80%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress glm result} Summary of the stepwise glm model on stress variables"}
+```{r stress GLM1, echo=FALSE}
 # Fit the generalized linear model
-s_formula<- paste('log(species.richness)','~' ,paste(colnames(stress_variables), collapse = "+"))
-glm_stress <- glm(formula = s_formula, 
-                 data = beetles, 
-                 family = gaussian())
-glm_stress_up<- update(glm_stress,  . ~ . -Land.Agricultural,data = beetles, family = gaussian())
+set.seed(1)
+s_formula<- paste('nSpecies','~' ,paste(colnames(stress_variables), collapse = "+"))
 
+# Fit the poisson GLM
+GLM_stress<- glm(formula = s_formula, data = beetles, family = poisson())
+
+# Fit the negative binomial GLM
+GLM_stress_nb<- glm.nb(formula = s_formula, data = beetles)
+
+# Update the GLM model by deleting items and adding interaction terms
+GLM_stress_nb1<- update(GLM_stress_nb,  . ~ . +Land.Rainfall*Land.MeanT ,data = beetles)
+GLM_stress_nb2<- update(GLM_stress_nb1,  . ~ . +Land.Rainfall*Land.Agricultural ,data = beetles)
+
+```
+
+The Rootograms in Figure 7 from poisson GLM(left) and negative binomial GLM(right) simply show the goodness of fit from two models. Histogram of negative binomial model is "standing" on the x_axis, differ from "hanging" graph from poisson GLM graph. Which shows there is much more deviation from the poisson GLM model.  
+
+```{r stress GLM rootogram, echo=FALSE,out.width = '70%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:Rootgram of two GLM models} Rootgram of two GLM models"}
+par(mfrow = c(1,2))
+countreg::rootogram(GLM_stress,main = "Poisson GLM")
+countreg::rootogram(GLM_stress_nb2,main = "Negative binomial GLM")
+```
+
+The overdispersion problem from poisson GLM model occurs again among the connectivity variables. Poisson GLM model returns a residual deviance of 16255 on 1410 degrees of freedom with a dispersion ratio of 11.51. Unlike the stressor model above, the p-value for connectivity variables are relatively high, only "Land.slope" and "Land.obstacles" have p-value less than 0.05. Then after adding all the possible interaction terms, AIC stepwised regression is applied to eliminate the unrelated variables.  
+
+```{r connectivity GLM, echo=FALSE,out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:connectivity GLM result} Summary of the stepwise GLM model on connectivity variables"}
+
+# Fit the generalized linear model
+c_formula<- paste('nSpecies','~',paste(colnames(connectivity_variables), collapse = "+"))
+GLM_connectivity<-glm(formula = c_formula, data = beetles, family = poisson())
+GLM_connectivity_nb <- glm.nb(formula = c_formula, data = beetles)
+
+# Update the GLM model by deleting items and adding interaction terms
+GLM_connectivity_nb1<- update(GLM_connectivity_nb,  . ~ . +Land.lakeper*Land.riverlength + Land.pondper*Land.lakeper,data = beetles)
+GLM_connectivity_nb2<- stepAIC(GLM_connectivity_nb1, trace=0)
+
+```
+
+Rootograms in Figure 8 show the difference in deviation for both models again. Negative binomial model displays a better dispersion.  
+
+```{r connectivity GLM rootogram, echo=FALSE,out.width = '70%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:Rootgram of two GLM models} Rootgram of two GLM models"}
+par(mfrow = c(1,2))
+countreg::rootogram(GLM_connectivity,main = "Poisson GLM")
+countreg::rootogram(GLM_connectivity_nb2,main = "Negative binomial GLM")
+```
+\newpage
+
+Figure 7 shows the VIF values of both GLM model, result shows no strict multicolinearity between all explanatory variables in both models.  
+
+```{r  vif, echo=FALSE,out.width = '80%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:Barplot of vif values of GLM model} Barplot of vif values of GLM model"}
 #calculate the VIF for each predictor variable in the model
-vif(glm_stress)
+s_vif<- car::vif(GLM_stress_nb)
 
 #create horizontal bar chart to display each VIF value
-barplot(vif(glm_stress), main = "VIF Values", horiz = TRUE, col = "steelblue")
-#add vertical line at 5
-abline(v = 5, lwd = 3, lty = 2)
+par(mfrow = c(1,2))
 
-# Summary and residual plot of this model
-summary(glm_stress)
-plot(glm_stress)
+barplot(s_vif, main = "Stress VIF Values", horiz = TRUE, col = "steelblue")
 
-# Perform the stepwise selection process
-stepwise_stress <- step(glm_stress, direction = "both")
+#calculate the VIF for each predictor variable in the model
+c_vif<- car::vif(GLM_connectivity)
 
-# Print the summary of the stepwise model
-summary(stepwise_stress)
-
-par(mfrow=c(2,2))
-plot(stepwise_stress)
+#create horizontal bar chart to display each VIF value
+barplot(c_vif, main = "Connectivity VIF Values", horiz = TRUE, col = "steelblue")
 
 ```
 
-```{r connectivity glm, echo=FALSE,out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:connectivity glm result} Summary of the stepwise glm model on connectivity variables"}
+The third research question seeks some correlations between two categories of variables, we need to find the interaction effects between connectivity and stressors covariates. After filtering the parameters, there are 6 variables for stressors and 7 for connectivity. There is no need to discover interactions among each and every variable. Consequently, interaction between every pair is found and every significant p-value is selected to build up the new model. AIC stepwised regression is implemented to reach the optimised model.  
+
+```{r stress interaction GLM, echo=FALSE,out.width = '80%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress interaction GLM result} Summary of the interaction GLM model on stress variables"}
 # Fit the generalized linear model
-c_formula<- paste('log(species.richness)','~',paste(colnames(connectivity_variables), collapse = "+"))
-glm_connectivity<- glm(formula = c_formula, 
+set.seed(1)
+dataset_for_interaction<- cbind(species_richness,stress_variables,connectivity_variables)
+
+GLM_stress_interaction2<- update(GLM_stress_nb, . ~ . +Land.Agricultural:Land.riverlength+Land.MeanT:Land.pondarea+Land.MeanT:Land.pondper+ Land.Rainfall:Land.pondarea+ Land.Rainfall:Land.riverlength+ Land.Rainfall:Land.lakeper+Land.fishing:Land.lakearea+Land.fishing:Land.pondarea+Land.watersports:Land.lakearea+Land.watersports:Land.pondarea+Land.watersports:Land.obstacles+Land.watersports:Land.lakeper+Land.watersports:Land.pondper ,data = beetles)
+GLM_stress_interaction3<- stepAIC(GLM_stress_interaction2, trace=0)
+
+```
+
+
+\newpage
+
+# 4 Result
+
+## 4.1 Stressor variables GLM
+
+From the anova table we can conclude that from the nature stressors, "Land.MeanT" shows the best significance related to the species richness, with every 1 degree increase in Mean temperature reflets around 0.20 increases in species richness. Both human stressors: "Land.fishing " and "Land.watersports" have implications on species richness, the intriguing part is the visits for watersports do help the rich of species of beetles. And the interaction of Rainfall/Agricultural do have good implications on beetles richness. 
+
+
+```{r result stress anova,warning=FALSE, message=FALSE, echo=FALSE,out.width = '100%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress GLM result} ANOVA of the GLM model on stress variables"}
+
+# Summary of best fit model
+str.sum<-anova(GLM_stress_nb2)
+Str_sum<- cbind(rownames(data.frame(GLM_stress_nb2$coefficients)),
+                      round(GLM_stress_nb2$coefficients,digits = 4),
+                      round(c(5.542e-01,2.858e-03,2.556e-03,6.354e-02,4.204e-03,2.083e-01,2.651e-01,5.239e-04,3.122e-05),digits = 3),
+                       round(str.sum$Deviance,digits = 3),
+                      str.sum$`Pr(>Chi)`,
+                      c(".","","","**","","***","*","*","**"))
+rownames(Str_sum)<-c()
+Str_sum%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Variable","Estimated coef","S.D","Deviance","p-value","Significance"))%>%
+    kable_styling(latex_options = "HOLD_position", position = "center") 
+```
+
+From the model comparison table, the optimal model is chosen by choosing the model with lowest AIC value, which is the one with two interaction terms.  
+
+```{r result stress table,warning=FALSE, message=FALSE, echo=FALSE,out.width = '100%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress GLM result} Summary of the GLM model on stress variables"}
+
+
+# Anova table to compare all models 
+stress.anova<-anova(GLM_stress_nb,GLM_stress_nb1,GLM_stress_nb2,test = "Chi")
+stress_result<- cbind(c("Original Model","+Land.Rainfall*Land.MeanT","+Land.Rainfall*Land.Agricultural"),
+                      round(stress.anova$theta,digits = 2),
+                      round(stress.anova$`   2 x log-lik.`,digits = 2),
+                      stress.anova$`Pr(Chi)`,
+                      c(10065,10067,10060))
+colnames(stress_result)<- c("Model","Theta","2*log-lik","p-value","AIC")
+stress_result%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Model","Theta","2*log-lik","p-value","AIC"))%>%
+  kable_styling(latex_options = "HOLD_position", position = "center")
+
+```
+
+## 4.2 Connectivity variables GLM
+
+For all the connectivity variables, all the selected covariates are showing the strict significance i contribution to the model. However, the result of coefficients are differ of the expectation. Since the "Land.lakeper" and "Land.pondper" have negative relationship with species richness, every 1 increase in pond count in 2km buffer will leads to an decrease in species richness around 1.14.  
+
+```{r result connectivity anova,warning=FALSE, message=FALSE, echo=FALSE,out.width = '100%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:Connectivity GLM result} ANOVA of the GLM model on connectivity variables"}
+con.sum<-anova(GLM_connectivity_nb2)
+Con_sum<- cbind(rownames(data.frame(GLM_connectivity_nb2$coefficients)),
+                      round(GLM_connectivity_nb2$coefficients,digits = 4),
+                      round(c(0.03735,0.0064,0.0194,0.0823,0.02704,0.0439),digits = 3),
+                       round(con.sum$Deviance,digits = 3),
+                        con.sum$`Pr(>Chi)`,
+                       c("***","***","**","***","***","***"))
+rownames(Con_sum)<-c()
+Con_sum%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Variable","Estimated coef","S.D","Deviance","p-value","Significance"))%>%
+    kable_styling(latex_options = "HOLD_position", position = "center")
+```
+
+From the model comparisons, the preferred model is chosed to be the stepwised model after adding the interaction terms, with the smallest AIC value.  
+
+```{r result connectivity table,warning=FALSE, message=FALSE, echo=FALSE, out.width = '80%', fig.align = "center" ,fig.pos = "H",fig.cap="\\label{fig:connectivity GLM result} Summary of the stepwise GLM model on connectivity variables"}
+
+# Anova
+connectivity.anova<-anova(GLM_connectivity_nb,GLM_connectivity_nb1,GLM_connectivity_nb2,test = "Chi")
+Con_result<- cbind(c("Original Model","+Interaction terms","Stepwised"),
+                      round(connectivity.anova$theta,digits = 2),
+                      round(connectivity.anova$`   2 x log-lik.`,digits = 2),
+                      connectivity.anova$`Pr(Chi)`,
+                      c(10066,10057,10055))
+Con_result%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Model","Theta","2*log-lik","p-value","AIC"))%>%
+    kable_styling(latex_options = "HOLD_position", position = "center")
+
+```
+
+## 4.3 Stressor variables GLM with connectivity interactions
+
+In the model of all stress variables with interactions with connectivities,"Land.pondarea","Land.pondper","Land.obstacles" have the most interaction effects with all the stressor variables, and "Land.pondarea" shows the most dominating effects, with its positive interaction with "Land.MeanT" and negative effect with "Land.watersports".
+ 
+```{r result stressinter anova,warning=FALSE, message=FALSE, echo=FALSE,out.width = '100%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress GLM result} ANOVA of the interaction GLM model on stress variables"}
+
+# Summary of best fit model
+int.sum<-anova(GLM_stress_interaction3)
+Int_sum<- cbind(rownames(data.frame(GLM_stress_interaction3$coefficients)),
+                      round(GLM_stress_interaction3$coefficients,digits = 4),
+                      round(c(3.346e-01,1.195e-03,3.171e-02,8.632e-04,2.319e-01,2.963e-01,1.213e-01 ,9.044e-02,5.504e-03,6.210e-04,2.437e+00,4.093e+00,3.072e+02,3.217e-01,3.710e+00),digits = 3),
+                       round(int.sum$Deviance,digits = 3),
+                       int.sum$`Pr(>Chi)`,
+                       c("***","***","*","","***","***","**","**","","",".","**","**",".","*"))
+rownames(Int_sum)<-c()
+Int_sum%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Variable","Estimated coef","S.D","Deviance","p-value","Significance"))%>%
+    kable_styling(latex_options = "HOLD_position", position = "center")
+```
+
+
+In the model comparison part, two models from the original stressors GLM were compared to the model with connectivity interactions, finally the stepwised model with smallest AIC value is chosed to be the optimal model.  
+
+```{r result stressinter table,warning=FALSE, message=FALSE, echo=FALSE,out.width = '100%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress GLM result} Summary of the interaction GLM model on stress variables"}
+
+
+# Anova table to compare all models 
+stress_inter.anova<-anova(GLM_stress_nb,GLM_stress_nb2,
+          GLM_stress_interaction2,GLM_stress_interaction3,test = "Chi")
+stress_inter_result<- cbind(c("Original Model","Optimized stress model","+connectivity interaction terms","Stepwised"),
+                      round(stress_inter.anova$theta,digits = 2),
+                      round(stress_inter.anova$`   2 x log-lik.`,digits = 2),
+                      stress_inter.anova$`Pr(Chi)`,
+                      c(10065,10060,10052,10045))
+colnames(stress_result)<- c("Model","Theta","2*log-lik","p-value","AIC")
+stress_inter_result%>%
+  kable(format = "latex", booktabs = TRUE,col.names = c("Model","Theta","2*log-lik","p-value","AIC"))%>%
+  kable_styling(latex_options = "HOLD_position", position = "center")
+
+```
+
+\newpage
+
+# 5 Discussion and limitations
+
+## 5.1 Other approaches
+
+### 5.1.1 Gaussian GLM
+
+Other than using count response variable in the case above, we can transform the response to continuous variable by create the species density(species richness/lake area) to replace it. After doing the log transformation to the new response variable, we can employ the gaussian GLM model to replace the overdipersed poisson model. The summary output indicates a strict decrease in AIC value, however, replace the response covariate is simply facing a enormous loss in data details and accuracy.  
+
+```{r new stress GLM, echo=FALSE, out.width = '80%', fig.align = "center",fig.pos = "H",fig.cap="\\label{fig:stress GLM result} Summary of the stepwise GLM model on stress variables"}
+# Fit the generalized linear model with new response variable
+set.seed(2)
+beetles$richness_density<- species_richness/beetles$Lake.area
+s_formula<- paste('log(richness_density)','~' ,paste(colnames(stress_variables), collapse = "+"))
+new_GLM_stress <- glm(formula = s_formula, 
                  data = beetles, 
                  family = gaussian())
 
-# Perform the stepwise selection process
-stepwise_connectivity <- step(glm_connectivity, direction = "both")
-summary(stepwise_connectivity)
-
-# Print the summary of the stepwise model
-par(mfrow=c(2,2))
-plot(stepwise_connectivity)
-
+# Update the gaussian GLM model by adding and deleting variables and interaction terms
+new_GLM_stress<-update(new_GLM_stress,  . ~ . -Land.allvisit+ Land.fishing *Land.watersports ,data = beetles, family = gaussian())
+summary(new_GLM_stress)
+# par(mfrow=c(2,2))
+# plot(new_GLM_stress)
 ```
 
-## Visualise using generalised additive model
+### 5.1.2 Visualise using generalised additive model(GAM)
 
+Now we introduce the Gerneralised Additive Model(GAM), it is the non parametric regression on all variables, using smooth functions feature variables.  Therefore the non-linear model is formed as:
 
+$$ g(\mu) = \beta_0 + f(x_1) + f(x_2)+ ... +f(x_p)$$ 
 
-```{r stress gam, echo=FALSE, out.width = '80%', fig.align = "center", fig.pos = "H", fig.cap="\\label{fig:stress gam result} Summary of the stepwise glm model on stress variables"}
+Where y is the response variable: Species richness, $\mu$ is Expected value of y, and $f(x_i)$ corresponds to the smooth functions for each explanatory variable to form non-linear relationship against y. One of the most common used spline function is the thin plate spline:  
+
+$$f(x) = \beta_0 + \beta_1x + \sum_{k = 1}^{K} u_k|x-\kappa_k|^3$$
+
+Where $\kappa_k$ are invidual knots of the smooth function and $K$ represents the total number of knots.  
+
+In this example, we use negative binomial gam model to fit the data and thin plate spline function is applied on each of the covariates. The outcome is quite ideal, as every component appears to be significant in this model. As shown in the Figure 10., the quantiles plotted against deviance residuals line mostly fall within the 95% confidence interval, and the scatterplot of the residuals displays a relatively good degree of randomness. From the visualization of different covariates in Figure 11., 95% confidence interval fits perfectly between the lines of best fit. However, the $R^2$ value from this model is too low that the result from this model is not realiable enough to support this model.  
+
+```{r stress gam, echo=FALSE, out.width = '80%', fig.align = "center", fig.pos = "H", fig.cap="\\label{fig:stress gam result} Summary of the negative binomial GAM model on stress variables"}
 # Fit the GAM model
-gam_stress <- mgcv::gam(log(species.richness)~ s(Land.Agricultural) +
+gam_stress <- mgcv::gam(nSpecies~ 
+                    s(Land.Agricultural) +
                     s(Land.urban) + 
-                    s(land.MeanT)+
-                   s(Lan.Rainfall) +
-                    s(Land.fishing)+ 
-                   s(Land.watersports) +
-                    s(Land.allvisit), 
-                  data = beetles,family = gaussian())
+                    s(Land.MeanT)+
+                   s(Land.Rainfall) +
+                   s(Land.fishing)+ 
+                   s(Land.watersports), 
+                  data = beetles,family = "nb",
+                  select = T)
 
 # Summary of the GAM model
 summary(gam_stress)
-gam.check(gam_stress)
+par(mfrow = c(2,2))
+gam.check(gam_stress,rep = 500)
 
-gam_stress_up = update(gam_stress, . ~ .  -s(Land.urban)  )
-
-summary(gam_stress_up)
 # Visualize through the component plots
 gratia::draw(gam_stress)
 ```
 
-```{r connectivity GAM, echo=FALSE}
-# Fit the GAM model
-gam_connectivity <- mgcv::gam(nSpecies~ s(landscape_2km_Mean.slope..degrees.) + s(landscape_2km_Lake.area..)+
-                   s(landscape_2km_Pond.area..) + s(landscape_2km_Rivers...length..m._per_ha)+ 
-                  s(landscape_2km_Obstacles...Count_per_ha)+s(landscape_2km_Lakes...Perimeter..m._per_ha)+
-                    s(landscape_2km_Ponds...Perimeter..m._per_ha)+
-                    s(landscape_2km_Lakes...Count_per_ha)+s(landscape_2km_Ponds...Count_per_ha), data = beetles, select = TRUE)
+## 5.2 Limitations
 
-# Summary of the GAM model
-summary(gam_connectivity)
+The results from models above have reveal a measurable degree of uncertainty and bias. For example, from the connectivity GLM model, both "Land.lakeper" and "Land.pondper" have negative impact on species richness, the result might be affected by a group of large lakes which have small beetles richness. A reasonable explanation for why "Land.watersports" have a positive impact on species richness could be that people are tend to visit beautiful places with rich species richness, therefore a positive coefficient could not involve the positive effect of the human activities. Overall, even though every model have some results that are not matching the common sense, the overall results are relatively good and connected.   
 
-# Visualize through the component plots
-gratia::draw(gam_connectivity)
+# 6 Conclusion
 
-anova(glm_connectivity, gam_connectivity, test = "Chisq")
+This research project uses GLM models to discover all the possible linear relationships between species richness and all the connectivity and stressors covariates. Given that the response variable is a count variable and overdispersion occurs when applying a Poisson model to the data, then negative binomial model is addressed and least AIC is used for filtering the models. Results have shown the significance on specific variables: "Land.MeanT ", "Land.watersports" and "Land.riverlength" etc have good impact on species richness. Moreover, "Land.fishing", "Land.lakeper" etc have negative affect on the diversity. On the other hand, the variables: "Land.pondarea","Land.pondper","Land.obstacles" from the connectivity have interactions with some of the stressors variables which do have influence on species richness.  
 
-```
+\newpage
+
+# 7 Bibliography and reference
